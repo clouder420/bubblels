@@ -7,7 +7,7 @@ class Game{
                                         { transparent: true });
         document.body.appendChild(this.app.view);
         this.graphics= new PIXI.Graphics();
-        this.app.stage.addChild(this.graphics);
+        this.graphics.alpha = 0.8;
         this.unit = Math.min(window.innerWidth, window.innerHeight) / 100;
         this.score_text = new PIXI.Text('', {
             fontFamily: 'Arial',
@@ -18,13 +18,28 @@ class Game{
         this.score_text.position.set(20);
         this.app.stage.addChild(this.score_text);
 
+        this.bubble_container = new PIXI.Container();
         this.best_score = 0;
         this.color = 0xA74482;
+        this.container = new PIXI.particles.ParticleContainer(5000, {
+            scale: true,
+            position: true,
+            rotation: false,
+            uvs: false,
+            tint: true
+        });
+
+
+        this.app.stage.addChild(this.container);
+        this.app.stage.addChild(this.bubble_container);
         this.new_game();
         this.app.ticker.add(delta => this.animation_step(delta));
     }
 
     new_game(){
+        while(this.bubble_container.children[0]) {
+            this.bubble_container.removeChild(this.bubble_container.children[0]);
+        }
         this.position = new Point(window.innerWidth / 2,
                                   window.innerHeight / 2);
         this.enemies = [];
@@ -32,6 +47,10 @@ class Game{
         this.score = 0;
         this.prev = -1;
         this.radius = 5*this.unit;
+        this.sprite = this.draw_circle(this.radius,
+                                       this.color);
+        this.sprite.anchor.set(0.5);
+        this.bubble_container.addChild(this.sprite);
         this.spawn_enemy();
     }
 
@@ -51,9 +70,73 @@ class Game{
         var d = new Point(tmp.x / tmp.distance(new Point(0, 0)),
                           tmp.y / tmp.distance(new Point(0, 0)));
         var v = (2 * Math.random() + 0.5)*this.unit;
+        var r = (1+5*Math.random())*this.unit;
+        var sprite = this.draw_circle(r, 0xF84AA7);
+        sprite.anchor.set(0.5);
+        var config = {
+            alpha: {
+                start: 0.8,
+                end: 0
+            },
+            scale: {
+                start: 0.1,
+                end: 0.1,
+                minimumScaleMultiplier: 1
+            },
+            color: {
+                start: '#ffffff',
+                end: '#247cff'
+            },
+            speed: {
+                start: 50*v,
+                end: 0,
+                minimumSpeedMultiplier: 1.02
+            },
+            acceleration: {
+                x: 0,
+                y: 0
+            },
+            maxSpeed: 0,
+            startRotation: {
+                min: 360,
+                max: 1080
+            },
+            noRotation: false,
+            rotationSpeed: {
+                min: 0,
+                max: 0
+            },
+            lifetime: {
+                min: 0.01,
+                max: 3/v
+            },
+            blendMode: 'add',
+            frequency: 0.001,
+            emitterLifetime: -1,
+            maxParticles: 300,
+            pos: {
+                x: 0,
+                y: 0
+            },
+            addAtBack: false,
+            spawnType: 'circle',
+            spawnCircle: {
+                x: 0,
+                y: 0,
+                r: r+20
+            }
+        }
+
+        var emitter = new PIXI.particles.Emitter(this.bubble_container,
+                                                 [PIXI.Texture.fromImage('https://pixijs.io/pixi-particles-editor/assets/images/particle.png')],
+                                                 config);
+
+        this.bubble_container.addChild(sprite);
         this.enemies.push(new Enemy(new Point(p.x, p.y),
                                     new Point(v*d.x, v*d.y),
-                                    (1+5*Math.random())*this.unit));
+                                    r,
+                                    sprite,
+                                    emitter));
     }
 
     update(delta){
@@ -81,30 +164,28 @@ class Game{
                 this.enemies[i].collide_with(this.enemies[j]);
             }
         }
+        this.sprite.x = this.position.x;
+        this.sprite.y = this.position.y;
     }
 
     animation_step(delta){
         this.update(delta);
-        this.graphics.clear();
-        this.draw_circle(this.position, this.radius, this.color);
-        this.enemies.forEach(e => this.draw_circle(e.position,
-                                                   e.radius,
-                                                   e.color))
     }
 
-    draw_circle(p, r, color){
+    draw_circle(r, color){
+        this.graphics.clear();
         this.graphics.lineStyle(0);
         this.graphics.beginFill(color);
-        this.graphics.drawCircle(p.x,
-                                 p.y,
-                                 r);
+        this.graphics.drawCircle(0, 0, r);
         this.graphics.endFill();
+        return new PIXI.Sprite(this.app.renderer
+                               .generateTexture(this.graphics));
     }
 
 }
 
 class Enemy {
-    constructor(position, velocity, radius){
+    constructor(position, velocity, radius, sprite, emitter){
         this.position = position;
         this.velocity = velocity;
         this.acceleration = new Point(0, 0);
@@ -112,6 +193,8 @@ class Enemy {
         this.extra_displacement = 2;
         this.inside = false;
         this.color = 0xF84AA7;
+        this.sprite = sprite;
+        this.emitter = emitter;
     }
 
     mass(){
@@ -120,12 +203,17 @@ class Enemy {
 
     update(delta){
         if(this.inside){
+            this.emitter.updateOwnerPos(this.position.x, this.position.y);
+            this.emitter.update(delta / 100);
+
             this.acceleration.add(new Point(delta*(Math.random()-0.5) / 50,
                                             delta*(Math.random()-0.5) / 50));
             this.velocity.add(this.acceleration);
         }
         this.position.add(new Point(this.velocity.x * delta,
                                     this.velocity.y * delta));
+        this.sprite.x = this.position.x;
+        this.sprite.y = this.position.y;
     }
 
     reflect(bounds){
